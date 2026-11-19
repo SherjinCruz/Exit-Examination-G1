@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopSense — Prediction Workspace</title>
+  <style>
+    :root { --navy:#182236; --blue:#5368df; --paper:#f3f5f8; --line:#dde3ec; --muted:#7d8798; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,"Segoe UI",Arial,sans-serif; background:var(--paper); color:var(--navy); }
+    .shell { min-height:100vh; display:grid; grid-template-columns:210px 1fr; }
+    .sidebar { background:#fff; border-right:1px solid var(--line); padding:28px 18px; display:flex; flex-direction:column; }
+    .brand { display:flex; align-items:center; gap:10px; margin:0 8px 38px; font-weight:800; }
+    .brand-mark { width:34px; height:34px; display:grid; place-items:center; border-radius:9px; background:var(--blue); color:#fff; }
+    .nav { border:0; width:100%; text-align:left; border-radius:8px; padding:12px 14px; background:#eef1ff; color:#4058d6; font-weight:750; }
+    .status { margin-top:auto; display:flex; gap:9px; border-top:1px solid var(--line); padding:18px 8px 0; }
+    .status-dot { width:8px; height:8px; margin-top:5px; border-radius:50%; background:#34b889; }
+    .status b,.status small { display:block; }.status b { font-size:12px }.status small { color:var(--muted); margin-top:3px; }
+    .workspace { width:min(1120px,100%); margin:auto; padding:34px 48px 28px; }
+    .topbar { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:24px; }
+    .eyebrow { margin:0 0 7px; color:#929bac; font-size:10px; letter-spacing:.16em; font-weight:850; }
+    h1 { margin:0; font-size:29px; letter-spacing:-.03em; }
+    .reset { border:1px solid var(--line); background:#fff; border-radius:8px; padding:9px 14px; color:#66738a; font-weight:750; cursor:pointer; }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+    .field { background:#fff; border:1px solid var(--line); border-radius:9px; padding:12px 14px; min-width:0; }
+    .field label { display:block; margin-bottom:7px; color:#6d788a; font-size:11px; font-weight:800; }
+    .field input,.field select { width:100%; height:26px; border:0; outline:0; background:#fff; color:var(--navy); font-size:14px; }
+    .action { margin-top:18px; display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid var(--line); border-radius:9px; padding:12px 12px 12px 18px; }
+    #status { color:var(--muted); font-size:12px; }
+    .predict { border:0; border-radius:8px; background:var(--blue); color:#fff; padding:13px 17px; font-weight:800; cursor:pointer; }
+    .predict span { margin-left:18px; }
+    .result { margin-top:14px; display:flex; align-items:center; gap:14px; border:1px solid #ccd5fb; border-radius:9px; background:#eef2ff; padding:15px; }
+    .result[hidden] { display:none; }
+    .result-icon { width:42px; height:42px; display:grid; place-items:center; border-radius:50%; background:var(--blue); color:#fff; font-weight:850; }
+    .result p { margin:0 0 3px; color:#7a8699; font-size:11px; }.result h2 { margin:0; color:#4057ce; }
+    @media (max-width:900px) { .shell { grid-template-columns:72px 1fr }.brand span:last-child,.status div { display:none }.sidebar { padding:28px 12px }.workspace { padding:28px 22px }.grid { grid-template-columns:repeat(2,minmax(0,1fr)) } }
+    @media (max-width:560px) { .shell { display:block }.sidebar { display:none }.workspace { padding:24px 16px }.grid { grid-template-columns:1fr }.action { align-items:flex-end } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><span>ShopSense</span></div>
+      <button class="nav">Predictor</button>
+      <div class="status"><span class="status-dot"></span><div><b>Model ready</b><small>Behavior classifier</small></div></div>
+    </aside>
+    <section class="workspace">
+      <header class="topbar">
+        <div><p class="eyebrow">CUSTOMER INSIGHTS</p><h1>Shopping Behavior Predictor</h1></div>
+        <button class="reset" id="reset" type="button">Reset</button>
+      </header>
+      <form id="form">
+        <div class="grid" id="grid"></div>
+        <footer class="action"><div id="status">Complete all fields to generate a prediction</div><button class="predict" type="submit">Generate prediction <span>→</span></button></footer>
+      </form>
+      <section class="result" id="result" hidden><div class="result-icon">S</div><div><p>Predicted purchase score</p><h2 id="result-value"></h2></div></section>
+    </section>
+  </main>
+  <script>
+    const grid=document.querySelector("#grid"), form=document.querySelector("#form"), status=document.querySelector("#status"), result=document.querySelector("#result");
+    const labels={Age:"Age",Review_Influence_Score:"Review influence",Social_Ads_Influence_Score:"Social ad influence",Price_Comparison_Frequency:"Price comparison",Discount_Importance_Score:"Discount importance",Impulse_Purchase_Frequency:"Impulse purchase frequency",Online_Shopping_Satisfaction_Score:"Shopping satisfaction",Trust_In_Online_Reviews_Score:"Trust in online reviews",Regret_After_Purchase_Frequency:"Purchase regret frequency"};
+    async function init(){
+      const res=await fetch("/schema"); const schema=await res.json();
+      schema.numeric.forEach(name=>grid.appendChild(makeField(name,labels[name]||name.replaceAll("_"," "),null)));
+      Object.entries(schema.categorical).forEach(([name,options])=>grid.appendChild(makeField(name,name.replaceAll("_"," "),options)));
+      update();
+    }
+    function makeField(name,label,options){
+      const wrap=document.createElement("div"); wrap.className="field";
+      const inputLabel=document.createElement("label"); inputLabel.htmlFor=name; inputLabel.textContent=label;
+      let input;
+      if(options){input=document.createElement("select");options.forEach(option=>{const o=document.createElement("option");o.value=option;o.textContent=option;input.appendChild(o)});}
+      else{input=document.createElement("input");input.type="number";input.step="0.1";input.placeholder="Enter value";}
+      input.id=name;input.name=name;input.required=true;
+      input.addEventListener("input",update);input.addEventListener("change",update);
+      wrap.append(inputLabel,input); return wrap;
+    }
+    function update(){const empty=[...form.querySelectorAll("input,select")].filter(el=>!el.value).length;status.textContent=empty?`${empty} field${empty===1?"":"s"} remaining`:"Ready to generate prediction";}
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();const data=Object.fromEntries(new FormData(form).entries());for(const [key,value] of Object.entries(data)){if(document.querySelector(`[name="${key}"]`).tagName==="INPUT")data[key]=Number(value);}
+      status.textContent="Analyzing customer profile...";
+      try{const res=await fetch("/predict",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({data})});const output=await res.json();if(!res.ok)throw new Error(output.detail||"Prediction failed");
+        document.querySelector("#result-value").textContent=output.prediction;result.hidden=false;status.textContent="Prediction generated";
+      }catch(error){status.textContent=error.message;}
+    });
+    document.querySelector("#reset").addEventListener("click",()=>{form.reset();result.hidden=true;update();});
+    init();
+  </script>
+</body>
+</html>
